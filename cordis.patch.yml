@@ -1,0 +1,12 @@
+# dsh-toolbox bundle patch
+#
+# Applied as a profile bundle layer (through the `dsh.bundle.patch` manifest
+# field). It inserts the one Loader row that owns both halves: the Node half
+# (lib/index.js — restart, update feed check, pricing, per-session cost, the
+# optional tray companion, and the settings document) and the browser half
+# (lib/client.js — the window-chrome buttons, the cost pill, the send-key
+# translator and the settings page), which the client module system discovers
+# from `dsh.client` in package.json.
+- insert:
+    - id: toolbox
+      name: 'dsh-toolbox'

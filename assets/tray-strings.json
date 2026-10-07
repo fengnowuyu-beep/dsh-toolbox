@@ -1,0 +1,40 @@
+{
+  "zh": {
+    "title": "自用工具库",
+    "tooltip": "自用工具库 · DeepSeek Harness",
+    "open": "打开 DeepSeek Harness",
+    "restart": "重启 DeepSeek Harness",
+    "check": "检查更新",
+    "close": "关闭本图标（不影响 DSH）",
+    "confirmTitle": "确认重启？",
+    "confirmBody": "确定要重启 DeepSeek Harness 吗？\n\n进行中的对话与后台任务会被中断，会话记录会在退出前落盘。",
+    "restarting": "正在重启 DeepSeek Harness…",
+    "restartRefused": "重启未执行：{0}",
+    "restartFailed": "重启失败：{0}",
+    "checking": "正在检查更新…",
+    "newVersion": "发现新版本 {0}（当前 {1}）。打开 DSH 后点击标题栏的更新图标即可安装。",
+    "upToDate": "已是最新版本 {0}。",
+    "checkFailed": "检查失败：{0}",
+    "noUpdateInfo": "没有取到更新信息。",
+    "openFailed": "无法打开：{0}"
+  },
+  "en": {
+    "title": "Personal toolbox",
+    "tooltip": "Personal toolbox · DeepSeek Harness",
+    "open": "Open DeepSeek Harness",
+    "restart": "Restart DeepSeek Harness",
+    "check": "Check for updates",
+    "close": "Close this icon (DSH keeps running)",
+    "confirmTitle": "Restart now?",
+    "confirmBody": "Restart DeepSeek Harness?\n\nWork in progress is interrupted; session logs are flushed before exit.",
+    "restarting": "Restarting DeepSeek Harness...",
+    "restartRefused": "Restart not started: {0}",
+    "restartFailed": "Restart failed: {0}",
+    "checking": "Checking for updates...",
+    "newVersion": "Version {0} is available (installed {1}). Open DSH and use the title-bar update icon to install it.",
+    "upToDate": "Already up to date ({0}).",
+    "checkFailed": "Check failed: {0}",
+    "noUpdateInfo": "No update information was returned.",
+    "openFailed": "Could not open: {0}"
+  }
+}

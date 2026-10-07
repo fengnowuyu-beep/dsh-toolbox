@@ -1,0 +1,53 @@
+{
+  "name": "dsh-toolbox",
+  "version": "1.0.0",
+  "description": "自用工具库：标题栏一键重启 DSH、检查桌面端更新、选择 Enter / Ctrl+Enter 发送、显示本对话消费金额 · Personal toolbox for DSH Desktop",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "engines": {
+      "dsh": ">=0.2.0-rc.1"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ],
+      "platform": "web"
+    }
+  },
+  "files": [
+    "lib",
+    "scripts",
+    "assets",
+    "cordis.patch.yml",
+    "README.md",
+    "icon.svg"
+  ],
+  "scripts": {
+    "test": "node test/settings.test.mjs && node test/pricing.test.mjs && node test/appinfo.test.mjs && node test/cost.test.mjs && node test/restart.test.mjs && node test/host.test.mjs && node test/client.test.mjs"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "toolbox",
+    "restart",
+    "update",
+    "cost",
+    "pricing"
+  ],
+  "license": "MIT"
+}
