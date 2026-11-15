@@ -9,6 +9,9 @@ Desktop.ini
 *.tmp
 *.log
 
+# Bytecode the icon generator's imports leave behind
+__pycache__/
+
 # A local install inside the plugin would create this; the profile owns the
 # real link.
 node_modules/

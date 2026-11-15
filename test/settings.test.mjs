@@ -22,14 +22,45 @@ test('defaults are complete and stable', () => {
   const settings = normalizeSettings({})
   equal(settings.version, SETTINGS_VERSION)
   equal(settings.sendKey, 'enter')
+  equal(settings.windowButtons.settings, true, 'the settings button is on by default')
   equal(settings.windowButtons.restart, true)
   equal(settings.windowButtons.updateCheck, true)
   equal(settings.windowButtons.webFallback, false)
-  equal(settings.cost.currency, 'CNY')
-  equal(settings.cost.pricingSource, 'auto')
-  equal(settings.cost.refreshHours, 168)
+  equal(settings.title.enabled, true, 'AI title renaming is offered by default')
   equal(settings.tray.enabled, false)
+  equal(settings.startWindow.maximized, true, 'the window comes up maximized by default')
   deepEqual(Object.keys(settings).sort(), Object.keys(DEFAULTS).sort())
+})
+
+test('the start-up window setting round-trips and refuses hostile values', async () => {
+  // Off, explicitly.
+  equal(normalizeSettings({ startWindow: { maximized: false } }).startWindow.maximized, false)
+  // A missing or malformed value means "the default", which is on.
+  equal(normalizeSettings({ startWindow: {} }).startWindow.maximized, true)
+  equal(normalizeSettings({ startWindow: 'yes' }).startWindow.maximized, true)
+  equal(normalizeSettings({ startWindow: { maximized: 'no' } }).startWindow.maximized, true)
+  equal(normalizeSettings({ startWindow: null }).startWindow.maximized, true)
+
+  // Persisted off, config silent → off. The config layer supplies the nested
+  // object only when nothing is stored: a stored choice replaces it wholesale,
+  // because the settings page writes the whole object the user chose.
+  equal(composeSettings({}, { startWindow: { maximized: false } }).startWindow.maximized, false)
+  equal(composeSettings({ startWindow: { maximized: false } }, {}).startWindow.maximized, false)
+  equal(
+    composeSettings({ startWindow: { maximized: false } }, { startWindow: { maximized: true } }).startWindow.maximized,
+    false,
+    'a stored choice is not overridden field by field'
+  )
+
+  const home = await mkdtemp(join(tmpdir(), 'dsh-toolbox-settings-window-'))
+  try {
+    const chosen = normalizeSettings({ startWindow: { maximized: false } })
+    await savePersisted(chosen, home)
+    const reloaded = composeSettings(await loadPersisted(undefined, home), {})
+    equal(reloaded.startWindow.maximized, false, 'the choice survives a restart')
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
 })
 
 test('hostile values fall back instead of reaching the rest of the plugin', () => {
@@ -37,16 +68,14 @@ test('hostile values fall back instead of reaching the rest of the plugin', () =
     sendKey: 'space',
     updateCheckHours: -4,
     windowButtons: { restart: 'yes' },
-    cost: { currency: 'EUR', usdCny: 0, refreshHours: 1e9, pricingSource: 'nope' },
+    title: { maxInputKb: 999, enabled: 'maybe' },
     tray: { enabled: 'on' }
   })
   equal(settings.sendKey, 'enter')
   equal(settings.updateCheckHours, DEFAULTS.updateCheckHours)
   equal(settings.windowButtons.restart, true)
-  equal(settings.cost.currency, 'CNY')
-  equal(settings.cost.usdCny, DEFAULTS.cost.usdCny)
-  equal(settings.cost.refreshHours, DEFAULTS.cost.refreshHours)
-  equal(settings.cost.pricingSource, 'auto')
+  equal(settings.title.maxInputKb, DEFAULTS.title.maxInputKb)
+  equal(settings.title.enabled, true)
   equal(settings.tray.enabled, false)
 })
 
@@ -54,28 +83,27 @@ test('numbers are clamped to their documented bands', () => {
   equal(normalizeSettings({ updateCheckHours: 0.1 }).updateCheckHours, DEFAULTS.updateCheckHours)
   equal(normalizeSettings({ updateCheckHours: 0.25 }).updateCheckHours, 0.25)
   equal(normalizeSettings({ updateCheckHours: 10_000 }).updateCheckHours, DEFAULTS.updateCheckHours)
-  equal(normalizeSettings({ cost: { usdCny: 7.25 } }).cost.usdCny, 7.25)
-  equal(normalizeSettings({ cost: { refreshHours: 1 } }).cost.refreshHours, 1)
+  equal(normalizeSettings({ title: { maxInputKb: 8 } }).title.maxInputKb, 8)
+  equal(normalizeSettings({ title: { maxInputKb: 24 } }).title.maxInputKb, 24)
 })
 
 test('a persisted scalar wins over the config layer, field by field', () => {
-  const configured = { sendKey: 'ctrlEnter', cost: { currency: 'USD' }, updateCheckHours: 12 }
+  const configured = { sendKey: 'ctrlEnter', tray: { enabled: false }, updateCheckHours: 12 }
   const stored = { sendKey: 'enter' }
   const settings = composeSettings(stored, configured)
   equal(settings.sendKey, 'enter')
-  equal(settings.cost.currency, 'USD')
+  equal(settings.tray.enabled, false, 'a field the stored document does not carry comes from the config')
   equal(settings.updateCheckHours, 12)
 })
 
 test('a stored nested object replaces the config one wholesale', () => {
   const settings = composeSettings(
-    { cost: { currency: 'USD', enabled: false } },
-    { cost: { currency: 'CNY', usdCny: 6.8, enabled: true } }
+    { title: { enabled: false } },
+    { title: { enabled: true, maxInputKb: 6 } }
   )
-  equal(settings.cost.currency, 'USD')
-  equal(settings.cost.enabled, false)
+  equal(settings.title.enabled, false)
   // A field the stored object does not carry still comes from the config layer.
-  equal(settings.cost.usdCny, 6.8)
+  equal(settings.title.maxInputKb, 6)
 })
 
 test('the effective document is always stamped current', () => {
@@ -105,11 +133,11 @@ test('the settings document round-trips through disk', async () => {
     equal(stateDir(home), join(home, 'toolbox'))
     deepEqual(await loadPersisted(undefined, home), {})
 
-    const written = normalizeSettings({ sendKey: 'ctrlEnter', cost: { currency: 'USD' } })
+    const written = normalizeSettings({ sendKey: 'ctrlEnter', title: { enabled: false } })
     await savePersisted(written, home)
     const reloaded = loadPersisted(undefined, home)
     equal(reloaded.sendKey, 'ctrlEnter')
-    equal(reloaded.cost.currency, 'USD')
+    equal(reloaded.title.enabled, false)
     const text = await readFile(settingsPath(home), 'utf8')
     ok(text.endsWith('\n'), 'the document should end with a newline')
 

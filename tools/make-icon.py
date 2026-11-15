@@ -1,68 +1,112 @@
 """Render the plugin's tray/app icon (assets/icon.ico + assets/icon.png).
 
-Run once when the artwork changes:
+Run when the artwork changes:
 
-    python tools/make-icon.py
+    python tools/make-icon.py [path-to-DSH-icon.png]
+
+The artwork is DSH's own icon **recoloured**, which is what the user asked for:
+the whale keeps its shape and the light rounded plate it sits on, and only the ink
+changes to this plugin's blue, so the two icons side by side in the notification
+area can be told apart at a glance. The source is the installed application's
+`resources/icon.png` (1024 px, transparent corners), looked up in this order: the
+command-line argument, `$DSH_ICON`, the usual install path, then Program Files.
+
+Note what that means: the whale is DeepSeek's mark, used here for a personal local
+tool. Recolouring does not make it yours to redistribute — keep this plugin
+private, or draw your own mark instead.
 
 The tray companion needs a real .ico because Windows PowerShell loads it through
 System.Drawing; shipping the rendered file keeps the plugin free of a build step.
 """
 from __future__ import annotations
 
+import os
 import pathlib
+import sys
 
-from PIL import Image, ImageDraw
+from PIL import Image
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "assets"
 
-BLUE = (76, 141, 255, 255)
-DEEP = (14, 17, 22, 255)
-WHITE = (255, 255, 255, 255)
+#: The plugin's accent, and the only thing that distinguishes this icon from
+#: DSH's own. Change it here to recolour the whole icon.
+ACCENT = (76, 141, 255)
+
+#: How dark a pixel must be to count as ink (the whale) rather than plate.
+INK_LEVEL = 128
+
+#: Candidate locations for the application's own icon on this machine.
+SOURCE_CANDIDATES = (
+    pathlib.Path(r"D:\Software\DeepSeek Harness\resources\icon.png"),
+    pathlib.Path(r"C:\Program Files\DeepSeek Harness\resources\icon.png"),
+    pathlib.Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "DeepSeek Harness" / "resources" / "icon.png",
+)
 
 
-def render(size: int) -> Image.Image:
-    """One icon at one size, drawn at 4x and downsampled for clean edges."""
-    scale = 4
-    canvas = size * scale
-    image = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
+def find_source(argv: list[str]) -> pathlib.Path:
+    """Locate the application icon to derive from.
 
-    unit = canvas / 32
-
-    def box(x0: float, y0: float, x1: float, y1: float) -> tuple[float, float, float, float]:
-        return (x0 * unit, y0 * unit, x1 * unit, y1 * unit)
-
-    # Toolbox body with a lid band.
-    draw.rounded_rectangle(box(2, 7, 30, 27), radius=int(5 * unit), fill=BLUE)
-    draw.rectangle(box(2, 12, 30, 15), fill=(14, 17, 22, 90))
-
-    # Handle.
-    draw.arc(
-        box(12, 3, 20, 11),
-        start=180,
-        end=360,
-        fill=DEEP,
-        width=max(2, int(2.2 * unit)),
+    @param argv - the script arguments.
+    @returns the source image path.
+    """
+    candidates = [pathlib.Path(argument) for argument in argv[1:2]]
+    configured = os.environ.get("DSH_ICON")
+    if configured:
+        candidates.append(pathlib.Path(configured))
+    candidates.extend(SOURCE_CANDIDATES)
+    for candidate in candidates:
+        if str(candidate) != "" and candidate.is_file():
+            return candidate
+    raise SystemExit(
+        "找不到 DSH 自己的图标（resources/icon.png）。\n"
+        "用法：python tools/make-icon.py [path-to-icon.png]，或设置环境变量 DSH_ICON。"
     )
 
-    # Yuan mark: two horizontal strokes, a Y, and a stem.
-    stroke = max(2, int(2.3 * unit))
-    draw.line(box(11.5, 19.5, 20.5, 19.5), fill=WHITE, width=stroke)
-    draw.line(box(16, 19.5, 16, 27), fill=WHITE, width=stroke)
-    draw.line(box(12.7, 23.4, 19.3, 23.4), fill=WHITE, width=stroke)
-    draw.line(box(12.4, 16.2, 16, 20.2), fill=WHITE, width=stroke)
-    draw.line(box(19.6, 16.2, 16, 20.2), fill=WHITE, width=stroke)
 
-    return image.resize((size, size), Image.LANCZOS)
+def recolour(source: Image.Image) -> Image.Image:
+    """Repaint the source's ink in the accent colour, plate and edges included.
+
+    The blend is per pixel: how far a pixel sits between the plate and the ink
+    decides how much accent it gets, which keeps the anti-aliased outline smooth
+    instead of leaving a hard cut-out.
+    """
+    image = source.convert("RGBA")
+    pixels = image.load()
+    width, height = image.size
+    # The plate's own colour, sampled from a point inside the rounded square but
+    # away from the whale.
+    plate = pixels[int(width * 0.08), int(height * 0.5)][:3]
+    plate_luminance = (plate[0] * 299 + plate[1] * 587 + plate[2] * 114) // 1000
+    span = max(1, plate_luminance - INK_LEVEL)
+    for y in range(height):
+        for x in range(width):
+            red, green, blue, alpha = pixels[x, y]
+            if alpha == 0:
+                continue
+            luminance = (red * 299 + green * 587 + blue * 114) // 1000
+            if luminance >= plate_luminance:
+                continue
+            coverage = min(1.0, max(0.0, (plate_luminance - luminance) / span))
+            pixels[x, y] = (
+                int(red + (ACCENT[0] - red) * coverage),
+                int(green + (ACCENT[1] - green) * coverage),
+                int(blue + (ACCENT[2] - blue) * coverage),
+                alpha,
+            )
+    return image
 
 
 def main() -> None:
+    source = find_source(sys.argv)
+    print(f"source: {source}")
+    icon = recolour(Image.open(source))
     ASSETS.mkdir(parents=True, exist_ok=True)
     sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256]
-    frames = [render(size) for size in sizes]
-    frames[-1].save(ASSETS / "icon.ico", format="ICO", sizes=[(s, s) for s in sizes])
-    frames[-1].resize((128, 128), Image.LANCZOS).save(ASSETS / "icon.png")
+    # `sizes=` is the path this deployment has already proven: System.Drawing in
+    # the tray companion loads these frames without complaint.
+    icon.save(ASSETS / "icon.ico", format="ICO", sizes=[(size, size) for size in sizes])
+    icon.resize((256, 256), Image.LANCZOS).save(ASSETS / "icon.png")
     print(f"wrote {ASSETS / 'icon.ico'} and {ASSETS / 'icon.png'}")
 
 

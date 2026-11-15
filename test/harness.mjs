@@ -64,7 +64,12 @@ export async function run(label) {
       process.stdout.write(`  ok   ${item.name}\n`)
     } catch (error) {
       failed += 1
-      process.stdout.write(`  FAIL ${item.name}\n       ${String(error?.message ?? error).split('\n').join('\n       ')}\n`)
+      // A thrown error's own location is usually the useful part; message-only
+      // output hides it. Set DSH_TEST_STACK=1 to see the stack as well.
+      const detail = process.env.DSH_TEST_STACK === '1' && error?.stack !== undefined
+        ? error.stack
+        : String(error?.message ?? error)
+      process.stdout.write(`  FAIL ${item.name}\n       ${String(detail).split('\n').join('\n       ')}\n`)
     }
   }
   process.stdout.write(`${label}: ${cases.length - failed}/${cases.length} passed\n`)

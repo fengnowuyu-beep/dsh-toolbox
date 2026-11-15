@@ -1,7 +1,7 @@
 {
   "name": "dsh-toolbox",
-  "version": "1.0.0",
-  "description": "自用工具库：标题栏一键重启 DSH、检查桌面端更新、选择 Enter / Ctrl+Enter 发送、显示本对话消费金额 · Personal toolbox for DSH Desktop",
+  "version": "2.0.0",
+  "description": "自用工具库：标题栏一键重启/打开设置 DSH、检查桌面端更新、选择 Enter / Ctrl+Enter 发送（输入框旁有提示）、右键会话用 AI 重新生成标题（思考关闭）、启动自动最大化、托盘打开/隐藏/重启/设置/关闭 DSH · Personal toolbox for DSH Desktop（消费金额已拆分为 dsh-cost）",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -37,7 +37,7 @@
     "icon.svg"
   ],
   "scripts": {
-    "test": "node test/settings.test.mjs && node test/pricing.test.mjs && node test/appinfo.test.mjs && node test/cost.test.mjs && node test/restart.test.mjs && node test/host.test.mjs && node test/client.test.mjs"
+    "test": "node test/settings.test.mjs && node test/appinfo.test.mjs && node test/restart.test.mjs && node test/window.test.mjs && node test/title.test.mjs && node test/host.test.mjs && node test/client.test.mjs"
   },
   "keywords": [
     "dsh",
@@ -46,8 +46,9 @@
     "toolbox",
     "restart",
     "update",
-    "cost",
-    "pricing"
+    "window",
+    "tray",
+    "title"
   ],
   "license": "MIT"
 }

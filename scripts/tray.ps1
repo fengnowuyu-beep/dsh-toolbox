@@ -3,9 +3,15 @@
 
     DSH's own tray menu belongs to the Electron shell and cannot be extended by a
     plugin, so this companion owns a second icon next to it and offers the same
-    restart / update actions. It is started by the plugin's Host half only when
-    the user turns the feature on, and it exits by itself as soon as the DSH
-    application process it watches is gone.
+    restart / update actions, plus showing or hiding the DSH window itself. It is
+    started by the plugin's Host half only when the user turns the feature on, and
+    it exits by itself as soon as the DSH application process it watches is gone.
+
+    Showing and hiding the window happens HERE, in this process, rather than
+    through the Host: Windows only lets a process move another application's
+    window to the front when it owns the foreground, and a click on this icon is
+    what grants that. Asking the Host to do it would show the window without
+    raising it.
 
     This file is deliberately pure ASCII: Windows PowerShell 5.1 reads a script
     without a byte-order mark as ANSI, which corrupts non-ASCII source. All
@@ -67,7 +73,18 @@ function Write-TrayLog {
 $mutexName = "Local\dsh-toolbox-tray-$AppPid"
 $mutex = New-Object System.Threading.Mutex($false, $mutexName)
 $owns = $false
-try { $owns = $mutex.WaitOne(0) } catch { $owns = $false }
+try {
+    $owns = $mutex.WaitOne(0)
+} catch [System.Threading.AbandonedMutexException] {
+    # The previous companion was killed rather than closed - which is exactly what
+    # turning the settings switch off does - so the mutex is abandoned and .NET
+    # reports it as an exception even though this process now owns it. Treating
+    # that as "someone else is running" is what would keep the icon from ever
+    # coming back.
+    $owns = $true
+} catch {
+    $owns = $false
+}
 if (-not $owns) {
     Write-TrayLog 'another companion already owns this application; exiting'
     exit 0
@@ -75,6 +92,10 @@ if (-not $owns) {
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+
+# The window code is shared with the maximize helper and defines functions only,
+# so dot-sourcing it here keeps the foreground rights of this process's click.
+. (Join-Path $PSScriptRoot 'appwindow.ps1')
 
 # Log before touching the shell: creating a NotifyIcon talks to the notification
 # area, so a busy or restarting shell must be distinguishable from a bug here.
@@ -113,6 +134,28 @@ function Open-Application {
         Write-TrayLog 'opened application'
     } catch {
         Show-Balloon (Format2 (Msg 'openFailed' 'Could not open: {0}') $_.Exception.Message '') 'Error'
+    }
+}
+
+<#
+    Show the DSH window if it is hidden or minimized, hide it if it is on screen.
+    Falls back to opening the application when the process has no window at all
+    (a `dsh web`-style launch, or a window that has not been created yet).
+#>
+function Toggle-ApplicationWindow {
+    try {
+        $action = Invoke-AppWindowToggle -ProcessId $AppPid
+        switch ($action) {
+            'shown' { Write-TrayLog ('showed the application window (app pid {0})' -f $AppPid) }
+            'hidden' { Write-TrayLog ('hid the application window (app pid {0})' -f $AppPid) }
+            default {
+                Write-TrayLog ('no window to toggle for app pid {0}; opening instead' -f $AppPid)
+                Open-Application
+            }
+        }
+    } catch {
+        Show-Balloon (Format2 (Msg 'toggleFailed' 'Could not show the window: {0}') $_.Exception.Message '') 'Error'
+        Write-TrayLog ("toggle failed: {0}" -f $_.Exception.Message)
     }
 }
 
@@ -169,20 +212,63 @@ function Close-Companion {
     [System.Windows.Forms.Application]::Exit()
 }
 
+# Closing DSH cannot be undone by the plugin, and the shell owns app.quit(): the
+# plugin's only lever is ending the application process, which the Node half turns
+# into its own graceful shutdown. So this always asks first and says plainly that
+# work in progress is interrupted.
+function Stop-Application {
+    $answer = [System.Windows.Forms.MessageBox]::Show(
+        (Msg 'quitConfirmBody' 'Close DeepSeek Harness?'),
+        (Msg 'quitConfirmTitle' 'Close DeepSeek Harness?'),
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Warning)
+    if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+    try {
+        $result = Invoke-ToolboxApi -Method 'quit' -Body '{"confirm":true}'
+        if ($result.ok -eq $true) {
+            Show-Balloon (Msg 'closing' 'Closing DeepSeek Harness...')
+            Write-TrayLog ('quit armed: {0}' -f $result.quit.detail)
+        } else {
+            Show-Balloon (Format2 (Msg 'quitRefused' 'Close not started: {0}') ([string]$result.error) '') 'Error'
+            Write-TrayLog ('quit refused: {0}' -f $result.error)
+        }
+    } catch {
+        Show-Balloon (Format2 (Msg 'quitFailed' 'Close failed: {0}') $_.Exception.Message '') 'Error'
+        Write-TrayLog ("quit call failed: {0}" -f $_.Exception.Message)
+    }
+}
+
+# The settings panel belongs to the page, so this only asks: the Host pushes the
+# request down the page's own event stream and the page opens the shell's panel.
+# The window is deliberately left alone - showing it here made the action feel
+# heavy - and with no page listening the request simply has no effect.
+function Open-Settings {
+    try {
+        $result = Invoke-ToolboxApi -Method 'page.request' -Body '{"action":"settings"}'
+        $delivered = 0
+        if ($null -ne $result.delivered) { $delivered = [int]$result.delivered }
+        Write-TrayLog ('asked {0} page(s) to open settings' -f $delivered)
+    } catch {
+        Show-Balloon (Format2 (Msg 'settingsFailed' 'Could not open settings: {0}') $_.Exception.Message '') 'Error'
+        Write-TrayLog ("settings request failed: {0}" -f $_.Exception.Message)
+    }
+}
+
 # ---- menu -------------------------------------------------------------------
 
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
-$menu.Items.Add((Msg 'open' 'Open DeepSeek Harness')) | Out-Null
+$itemToggle = $menu.Items.Add((Msg 'toggle' 'Show / hide DeepSeek Harness'))
 $itemRestart = $menu.Items.Add((Msg 'restart' 'Restart DeepSeek Harness'))
 $itemUpdate = $menu.Items.Add((Msg 'check' 'Check for updates'))
-$menu.Items.Add('-') | Out-Null
-$itemClose = $menu.Items.Add((Msg 'close' 'Close this icon'))
-$menu.Items[0].add_Click({ Open-Application })
+$itemSettings = $menu.Items.Add((Msg 'settings' 'Settings'))
+$itemQuit = $menu.Items.Add((Msg 'quit' 'Close DeepSeek Harness'))
+$itemToggle.add_Click({ Toggle-ApplicationWindow })
 $itemRestart.add_Click({ Restart-Application })
 $itemUpdate.add_Click({ Check-Updates })
-$itemClose.add_Click({ Close-Companion 'menu' })
+$itemSettings.add_Click({ Open-Settings })
+$itemQuit.add_Click({ Stop-Application })
 $script:notify.ContextMenuStrip = $menu
-$script:notify.add_MouseDoubleClick({ Open-Application })
+$script:notify.add_MouseDoubleClick({ Toggle-ApplicationWindow })
 $script:notify.Visible = $true
 
 # Watch the application: when DSH is gone (including a plugin-armed restart),
